@@ -1,3 +1,5 @@
-// Risk Engine module — placeholder for threat scoring and risk analysis
-// Implementation will be added in a subsequent step.
-export {};
+/**
+ * Risk Engine module — public re-export.
+ * All implementation lives in riskEngine.ts.
+ */
+export { calculateRisk } from "./riskEngine";

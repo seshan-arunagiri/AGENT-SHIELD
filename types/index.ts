@@ -1,14 +1,20 @@
-// Global type definitions for AgentShield
-// Detailed types will be added as modules are implemented.
+/**
+ * AgentShield — Types barrel file.
+ *
+ * Re-exports everything from types.ts (the canonical source of truth)
+ * and retains legacy types from the scaffold for backwards compatibility.
+ */
 
-export type RiskLevel = "safe" | "low" | "medium" | "high" | "critical";
+// ─── Re-export canonical threat-detection types ──────────────────────────────
+export type {
+  RiskLevel,
+  ThreatCategory,
+  ThreatPattern,
+  ScanResult,
+  PatternDefinition,
+} from "./types";
 
-export interface ScanResult {
-  toolName: string;
-  riskLevel: RiskLevel;
-  issues: string[];
-  timestamp: string;
-}
+// ─── Legacy scaffold types (kept for backwards compatibility) ────────────────
 
 export interface MCPTool {
   name: string;

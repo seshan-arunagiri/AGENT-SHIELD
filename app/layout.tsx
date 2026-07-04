@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { Toaster } from "@/components/ui/sonner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -13,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AgentShield — AI Agent Security Middleware",
+  title: "Aegis — AI Agent Security Middleware",
   description:
     "Protect your AI agents from tool poisoning and prompt injection attacks via MCP (Model Context Protocol). Enterprise-grade security middleware for agentic AI systems.",
   keywords: [
@@ -26,7 +27,7 @@ export const metadata: Metadata = {
     "middleware",
   ],
   openGraph: {
-    title: "AgentShield — AI Agent Security Middleware",
+    title: "Aegis — AI Agent Security Middleware",
     description:
       "Protect your AI agents from tool poisoning and prompt injection attacks via MCP.",
     type: "website",
@@ -45,6 +46,7 @@ export default function RootLayout({
     >
       <body className="min-h-screen bg-background text-foreground antialiased">
         {children}
+        <Toaster />
       </body>
     </html>
   );

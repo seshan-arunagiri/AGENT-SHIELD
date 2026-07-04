@@ -70,11 +70,13 @@ const MULTI_VECTOR_BONUS = 10;
  * Calculate the aggregate risk score and level from a set of matched patterns.
  *
  * @param patterns - Output of `scanContent()`. May be empty (safe content).
+ * @param options  - Optional configuration e.g. strictMode.
  * @returns          `{ riskScore, riskLevel }` ready for inclusion in ScanResult.
- *
- * @pure  No side effects. Same input always produces the same output.
  */
-export function calculateRisk(patterns: ThreatPattern[]): {
+export function calculateRisk(
+  patterns: ThreatPattern[],
+  options?: { strictMode?: boolean }
+): {
   riskScore: number;
   riskLevel: RiskLevel;
 } {
@@ -102,8 +104,6 @@ export function calculateRisk(patterns: ThreatPattern[]): {
   }
 
   // ── Step 3: Multi-vector bonus ───────────────────────────────────────────
-  // An attack using ≥ MULTI_VECTOR_THRESHOLD distinct categories is more
-  // dangerous than a single-category flood.
   if (byCategory.size >= MULTI_VECTOR_THRESHOLD) {
     accumulated += MULTI_VECTOR_BONUS;
   }
@@ -112,7 +112,7 @@ export function calculateRisk(patterns: ThreatPattern[]): {
   const riskScore = Math.min(accumulated, SCORE_CAP);
 
   // ── Step 5: Map score to risk level ─────────────────────────────────────
-  const riskLevel = scoreToLevel(riskScore);
+  const riskLevel = scoreToLevel(riskScore, options?.strictMode);
 
   return { riskScore, riskLevel };
 }
@@ -142,12 +142,21 @@ function groupByCategory(
 
 /**
  * Map a numeric risk score to its categorical RiskLevel.
- *
- * Uses the THRESHOLDS table so that adding or adjusting tiers
- * in the future only requires changing one data structure.
+ * If strictMode is true, shifts the Medium/Critical block threshold down by 10 points.
  */
-function scoreToLevel(score: number): RiskLevel {
-  for (const [level, [min, max]] of Object.entries(THRESHOLDS) as [
+function scoreToLevel(score: number, strictMode: boolean = false): RiskLevel {
+  // Deep copy so we don't mutate the global constant
+  const activeThresholds = { ...THRESHOLDS };
+
+  if (strictMode) {
+    // Standard block threshold is 51. Shift down by 10 to 41.
+    activeThresholds.Low[1] -= 10;      // 50 -> 40
+    activeThresholds.Medium[0] -= 10;   // 51 -> 41
+    activeThresholds.Medium[1] -= 10;   // 75 -> 65
+    activeThresholds.Critical[0] -= 10; // 76 -> 66
+  }
+
+  for (const [level, [min, max]] of Object.entries(activeThresholds) as [
     RiskLevel,
     [number, number]
   ][]) {
@@ -155,6 +164,5 @@ function scoreToLevel(score: number): RiskLevel {
       return level;
     }
   }
-  // Defensive fallback — should never be reached if THRESHOLDS covers 0–100.
   return "Critical";
 }

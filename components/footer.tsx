@@ -7,7 +7,7 @@ export function Footer() {
         <div className="flex flex-col items-center justify-between gap-6 sm:flex-row">
           {/* Left: Logo + tagline */}
           <div className="flex flex-col items-center gap-1.5 sm:items-start">
-            <span className="text-sm font-semibold text-white">AgentShield</span>
+            <span className="text-sm font-semibold text-white">Aegis</span>
             <p className="text-xs text-zinc-600">
               Security middleware for AI agents. Work in progress.
             </p>

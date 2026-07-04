@@ -35,6 +35,12 @@ export default function DemoPage() {
   const [scenario, setScenario] = useState<DemoScenario>("clean");
   const [scanState, setScanState] = useState<ScanState>(INITIAL_STATE);
 
+  type InputMode = "mock" | "upload" | "github" | "paste";
+  const [inputMode, setInputMode] = useState<InputMode>("mock");
+  const [fileContent, setFileContent] = useState<string>("");
+  const [repoUrl, setRepoUrl] = useState<string>("");
+  const [pasteContent, setPasteContent] = useState<string>("");
+
   // Reset results when tool or scenario changes
   const handleToolChange = useCallback((t: DemoTool) => {
     setTool(t);
@@ -50,11 +56,36 @@ export default function DemoPage() {
     setScanState({ status: "loading", result: null, errorMessage: null });
 
     try {
-      const response = await fetch("/api/scan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tool, scenario }),
-      });
+      let response: Response;
+
+      if (inputMode === "mock") {
+        response = await fetch("/api/scan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tool, scenario }),
+        });
+      } else if (inputMode === "upload") {
+        if (!fileContent) throw new Error("Please select a file to upload first.");
+        response = await fetch("/api/scan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tool: "upload", scenario: "live", content: fileContent }),
+        });
+      } else if (inputMode === "github") {
+        if (!repoUrl) throw new Error("Please enter a valid GitHub repository URL.");
+        response = await fetch("/api/scan-repo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ repoUrl }),
+        });
+      } else {
+        if (!pasteContent.trim()) throw new Error("Please paste some text to scan.");
+        response = await fetch("/api/scan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tool: "manual-paste", scenario: "live", content: pasteContent }),
+        });
+      }
 
       if (!response.ok) {
         const data = (await response.json()) as { error?: string };
@@ -68,13 +99,13 @@ export default function DemoPage() {
         err instanceof Error ? err.message : "Unknown error occurred.";
       setScanState({ status: "error", result: null, errorMessage: message });
     }
-  }, [tool, scenario]);
+  }, [tool, scenario, inputMode, fileContent, repoUrl, pasteContent]);
 
   const isLoading = scanState.status === "loading";
   const rawContent = scanState.result?.originalContent ?? null;
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#0A0A0A]">
+    <div className="flex min-h-screen flex-col bg-background">
       <Navbar />
 
       <main className="flex-1 pt-14">
@@ -83,19 +114,22 @@ export default function DemoPage() {
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, ease: "easeOut" }}
-          className="border-b border-white/[0.06] px-6 py-8"
+          className="border-b border-white/[0.06] px-6 py-12 relative overflow-hidden"
         >
-          <div className="mx-auto max-w-6xl">
+          {/* Header background glow */}
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-emerald-900/10 via-background to-background pointer-events-none" aria-hidden="true" />
+          
+          <div className="mx-auto max-w-6xl relative z-10">
             <div className="flex items-center gap-2 mb-1">
               <span className="rounded border border-white/10 bg-white/[0.04] px-2 py-0.5 font-mono text-[10px] text-zinc-500 tracking-widest">
                 INTERACTIVE DEMO
               </span>
             </div>
-            <h1 className="text-xl font-semibold tracking-tight text-white">
+            <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
               Live Threat Scanner
             </h1>
-            <p className="mt-1 text-sm text-zinc-500">
-              Select a tool and scenario to see AgentShield intercept real attack patterns in MCP tool responses.
+            <p className="mt-2 text-base text-zinc-400">
+              Select a tool and scenario to see Aegis intercept real attack patterns in MCP tool responses.
             </p>
           </div>
         </motion.div>
@@ -108,21 +142,121 @@ export default function DemoPage() {
           className="border-b border-white/[0.06] px-6 py-5"
         >
           <div className="mx-auto max-w-6xl space-y-4">
-            {/* Tool selector */}
-            <div>
-              <label className="mb-2 block text-[11px] font-semibold uppercase tracking-widest text-zinc-600">
-                MCP Tool
-              </label>
-              <ToolSelector selected={tool} onChange={handleToolChange} />
+            {/* Input Mode Tabs */}
+            <div className="flex items-center gap-2 mb-4">
+              <button
+                onClick={() => setInputMode("mock")}
+                className={`px-4 py-1.5 text-xs font-medium rounded-full transition-colors ${
+                  inputMode === "mock" ? "bg-white text-black" : "bg-white/5 text-zinc-400 hover:bg-white/10"
+                }`}
+              >
+                Mock Scenario
+              </button>
+              <button
+                onClick={() => setInputMode("upload")}
+                className={`px-4 py-1.5 text-xs font-medium rounded-full transition-colors ${
+                  inputMode === "upload" ? "bg-white text-black" : "bg-white/5 text-zinc-400 hover:bg-white/10"
+                }`}
+              >
+                File Upload
+              </button>
+              <button
+                onClick={() => setInputMode("github")}
+                className={`px-4 py-1.5 text-xs font-medium rounded-full transition-colors ${
+                  inputMode === "github" ? "bg-white text-black" : "bg-white/5 text-zinc-400 hover:bg-white/10"
+                }`}
+              >
+                GitHub Repo
+              </button>
+              <button
+                onClick={() => setInputMode("paste")}
+                className={`px-4 py-1.5 text-xs font-medium rounded-full transition-colors ${
+                  inputMode === "paste" ? "bg-white text-black" : "bg-white/5 text-zinc-400 hover:bg-white/10"
+                }`}
+              >
+                Paste Text
+              </button>
             </div>
 
-            {/* Scenario selector */}
-            <div>
-              <label className="mb-2 block text-[11px] font-semibold uppercase tracking-widest text-zinc-600">
-                Attack Scenario
-              </label>
-              <ScenarioSelector selected={scenario} onChange={handleScenarioChange} />
-            </div>
+            {inputMode === "mock" && (
+              <div className="flex gap-8">
+                <div>
+                  <label className="mb-2 block text-[11px] font-semibold uppercase tracking-widest text-zinc-600">
+                    MCP Tool
+                  </label>
+                  <ToolSelector selected={tool} onChange={handleToolChange} />
+                </div>
+                <div>
+                  <label className="mb-2 block text-[11px] font-semibold uppercase tracking-widest text-zinc-600">
+                    Attack Scenario
+                  </label>
+                  <ScenarioSelector selected={scenario} onChange={handleScenarioChange} />
+                </div>
+              </div>
+            )}
+
+            {inputMode === "upload" && (
+              <div>
+                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-widest text-zinc-600">
+                  Upload File (.md, .txt, .json)
+                </label>
+                <input
+                  type="file"
+                  accept=".md,.txt,.json"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setFileContent(await file.text());
+                      setScanState(INITIAL_STATE);
+                    }
+                  }}
+                  className="block w-full max-w-sm text-sm text-zinc-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-white/10 file:text-white hover:file:bg-white/20"
+                />
+              </div>
+            )}
+
+            {inputMode === "github" && (
+              <div>
+                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-widest text-zinc-600">
+                  Public GitHub Repo URL
+                </label>
+                <div className="flex flex-col gap-1 max-w-sm">
+                  <input
+                    type="text"
+                    value={repoUrl}
+                    onChange={(e) => {
+                      setRepoUrl(e.target.value);
+                      setScanState(INITIAL_STATE);
+                    }}
+                    placeholder="github.com/owner/repo"
+                    className="w-full bg-background border border-white/[0.06] rounded-md px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-white/20"
+                  />
+                  <p className="text-[10px] text-zinc-500">Public repos only, no auth. Subject to GitHub rate limits.</p>
+                </div>
+              </div>
+            )}
+
+            {inputMode === "paste" && (
+              <div className="w-full">
+                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-widest text-zinc-600">
+                  Raw Text Input
+                </label>
+                <textarea
+                  value={pasteContent}
+                  onChange={(e) => {
+                    setPasteContent(e.target.value);
+                    setScanState(INITIAL_STATE);
+                  }}
+                  maxLength={20000}
+                  placeholder="Paste any text, log, or tool response to scan for prompt injection or malicious instructions..."
+                  className="w-full min-h-[160px] bg-background border border-white/[0.06] rounded-md px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-white/20 font-mono resize-y"
+                />
+                <div className="mt-1 flex justify-between text-[10px] text-zinc-500">
+                  <span>{pasteContent.length} / 20,000 characters</span>
+                  {pasteContent.length >= 20000 && <span className="text-orange-500">Character limit reached</span>}
+                </div>
+              </div>
+            )}
 
             {/* Run scan button + error */}
             <div className="flex items-center gap-4 pt-1">
@@ -130,8 +264,8 @@ export default function DemoPage() {
                 id="run-scan-btn"
                 type="button"
                 onClick={handleRunScan}
-                disabled={isLoading}
-                className="group flex items-center gap-2.5 rounded-xl bg-white px-6 py-2.5 text-sm font-semibold text-black transition-all hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={isLoading || (inputMode === "paste" && !pasteContent.trim())}
+                className="group flex items-center gap-2.5 rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground shadow-[0_0_20px_rgba(16,185,129,0.15)] transition-all duration-200 hover:bg-emerald-500 hover:shadow-[0_0_25px_rgba(16,185,129,0.3)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-primary disabled:hover:shadow-none"
               >
                 {isLoading ? (
                   <>
@@ -206,7 +340,7 @@ export default function DemoPage() {
             {/* Right — Scan result */}
             <section aria-labelledby="result-panel-heading">
               <h2 id="result-panel-heading" className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-zinc-600">
-                AgentShield Analysis
+                Aegis Analysis
               </h2>
               <div className="h-full">
                 <ResultPanel
@@ -233,7 +367,7 @@ export default function DemoPage() {
                 },
                 {
                   step: "02",
-                  title: "AgentShield intercepts",
+                  title: "Aegis intercepts",
                   description: "The response is passed through the scanner before reaching the agent.",
                 },
                 {

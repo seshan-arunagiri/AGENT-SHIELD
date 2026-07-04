@@ -3,7 +3,8 @@
  *
  * Next.js Route Handler that accepts a tool + scenario, fetches the
  * corresponding mock content, runs it through the full threat detection
- * pipeline, and returns a ScanResult as JSON.
+ * pipeline (scan → score → sanitise), persists the result to SQLite via
+ * logScan(), and returns the ScanResult as JSON.
  *
  * Request body:
  *   { tool: "github" | "database" | "filesystem", scenario: string }
@@ -17,6 +18,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { runFullScan } from "@/lib/scanner";
+import { logScan } from "@/lib/logger/logger";
+import type { RiskLevel } from "@/types/types";
 import {
   getMockGithubResponse,
   type GithubScenario,
@@ -32,7 +35,7 @@ import {
 
 // ─── Supported Tools and Scenarios ───────────────────────────────────────────
 
-const VALID_TOOLS = ["github", "database", "filesystem"] as const;
+const VALID_TOOLS = ["github", "database", "filesystem", "upload", "manual-paste"] as const;
 type Tool = (typeof VALID_TOOLS)[number];
 
 const VALID_SCENARIOS = [
@@ -40,6 +43,7 @@ const VALID_SCENARIOS = [
   "injection",
   "credential-theft",
   "destructive",
+  "live",
 ] as const;
 type Scenario = (typeof VALID_SCENARIOS)[number];
 
@@ -51,9 +55,19 @@ function isValidScenario(s: unknown): s is Scenario {
   return VALID_SCENARIOS.includes(s as Scenario);
 }
 
-// ─── Mock Content Dispatcher ─────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/** Map risk level to a middleware decision. */
+function deriveStatus(riskLevel: RiskLevel): "Blocked" | "Allowed" {
+  return riskLevel === "Medium" || riskLevel === "Critical"
+    ? "Blocked"
+    : "Allowed";
+}
+
+/** Dispatch to the appropriate mock content generator. */
 function getMockContent(tool: Tool, scenario: Scenario): string {
+  if (tool === "upload" || tool === "manual-paste") return ""; // Should be provided via body.content
+  
   switch (tool) {
     case "github":
       return getMockGithubResponse(scenario as GithubScenario);
@@ -61,10 +75,14 @@ function getMockContent(tool: Tool, scenario: Scenario): string {
       return getMockDatabaseResponse(scenario as DatabaseScenario);
     case "filesystem":
       return getMockFilesystemResponse(scenario as FilesystemScenario);
+    default:
+      return "";
   }
 }
 
 // ─── Route Handler ────────────────────────────────────────────────────────────
+
+import { prisma } from "@/lib/db/prisma";
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
@@ -87,7 +105,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const { tool, scenario } = body as Record<string, unknown>;
+    const { tool, scenario, content: customContent } = body as Record<string, unknown>;
 
     if (!isValidTool(tool)) {
       return NextResponse.json(
@@ -107,15 +125,55 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // Fetch mock content and run the full scan pipeline.
-    const content = getMockContent(tool, scenario);
-    const result = runFullScan(content);
+    if ((tool === "upload" || tool === "manual-paste") && typeof customContent !== "string") {
+      return NextResponse.json(
+        { error: `Content string must be provided for ${tool} tool.` },
+        { status: 400 }
+      );
+    }
 
-    // Return the full ScanResult as JSON.
-    // The result is already serialisable (no RegExp or circular refs).
+    // 0. Fetch Global Settings
+    const settings = await prisma.appSettings.findUnique({ where: { id: 1 } });
+    const strictMode = settings?.strictMode ?? false;
+    const learningMode = settings?.learningMode ?? false;
+
+    // 1. Fetch content (use provided content if exists, else mock).
+    const content = typeof customContent === "string" ? customContent : getMockContent(tool, scenario);
+
+    // 2. Run the full pipeline: detect → score → sanitise.
+    const result = runFullScan(content, { strictMode });
+
+    // 3. Determine middleware decision.
+    let status = deriveStatus(result.riskLevel);
+    
+    // Override status if Learning Mode is enabled
+    if (learningMode) {
+      status = "Allowed";
+    }
+
+    // 4. Persist to SQLite — fire-and-forget style: we await it so the log
+    //    is written before we respond, but a logging failure does NOT cause
+    //    the scan response to fail. The scan result is still returned to the
+    //    client even if the DB write fails (e.g. DB locked, disk full).
+    try {
+      await logScan({
+        toolName: tool,
+        scenario,
+        riskScore: result.riskScore,
+        riskLevel: result.riskLevel,
+        detectedPatterns: result.detectedPatterns,
+        originalContent: result.originalContent,
+        sanitizedContent: result.sanitizedContent,
+        status,
+      });
+    } catch (logErr) {
+      // Log the error server-side but don't surface it to the client.
+      console.error("[AgentShield /api/scan] logScan failed:", logErr);
+    }
+
+    // 5. Return the full ScanResult as JSON.
     return NextResponse.json(result, { status: 200 });
   } catch (err) {
-    // Unexpected errors — log server-side, return generic message to client.
     console.error("[AgentShield /api/scan] Unexpected error:", err);
     return NextResponse.json(
       { error: "Internal server error. Please try again." },

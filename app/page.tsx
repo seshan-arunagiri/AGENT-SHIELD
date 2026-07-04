@@ -5,9 +5,9 @@ import { Button } from "@/components/ui/button";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "AgentShield — Protect AI Agents from Tool Poisoning & Prompt Injection",
+  title: "Aegis — Protect AI Agents from Tool Poisoning & Prompt Injection",
   description:
-    "AgentShield is a security middleware layer that protects AI agents from tool poisoning and prompt injection attacks via the Model Context Protocol (MCP).",
+    "Aegis is a security middleware layer that protects AI agents from tool poisoning and prompt injection attacks via the Model Context Protocol (MCP).",
 };
 
 // Static trust indicators shown below the hero headline
@@ -76,16 +76,22 @@ const features = [
 
 export default function LandingPage() {
   return (
-    <div className="flex min-h-screen flex-col bg-[#0A0A0A]">
+    <div className="flex min-h-screen flex-col bg-background">
       <Navbar />
 
-      <main className="flex-1">
+      <main className="flex-1 flex flex-col w-full">
         {/* ─── Hero ─────────────────────────────────────────────── */}
         <section
           id="hero"
           aria-labelledby="hero-headline"
-          className="relative flex flex-col items-center justify-center px-6 pb-24 pt-40 text-center"
+          className="relative flex flex-col items-center justify-center px-6 pb-32 pt-48 text-center bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-emerald-900/20 via-background to-background"
         >
+          {/* Noise overlay */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 bg-[url('/noise.svg')] opacity-[0.03] mix-blend-overlay"
+          />
+
           {/* Subtle dot-grid background */}
           <div
             aria-hidden="true"
@@ -93,8 +99,8 @@ export default function LandingPage() {
           />
 
           {/* Status badge */}
-          <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-green-400" aria-hidden="true" />
+          <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 backdrop-blur-sm">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" aria-hidden="true" />
             <span className="text-xs font-medium tracking-wide text-zinc-400">
               Early Access — Work in Progress
             </span>
@@ -103,14 +109,14 @@ export default function LandingPage() {
           {/* Headline */}
           <h1
             id="hero-headline"
-            className="mx-auto max-w-3xl text-balance text-4xl font-semibold leading-[1.15] tracking-tight text-white sm:text-5xl lg:text-6xl"
+            className="mx-auto max-w-4xl text-balance text-4xl font-extrabold leading-[1.1] tracking-tight text-white sm:text-5xl lg:text-7xl"
           >
             Protecting AI Agents from Tool Poisoning &amp; Prompt Injection
           </h1>
 
           {/* Subtext */}
-          <p className="mx-auto mt-6 max-w-xl text-balance text-base leading-relaxed text-zinc-500 sm:text-lg">
-            AgentShield sits between your AI agent and the MCP tool layer —
+          <p className="mx-auto mt-6 max-w-xl text-balance text-base leading-relaxed text-zinc-400 sm:text-lg">
+            Aegis sits between your AI agent and the MCP tool layer —
             scanning, scoring, and sanitizing every interaction before it
             reaches your model.
           </p>
@@ -120,7 +126,7 @@ export default function LandingPage() {
             <Link href="/demo" id="hero-cta-demo">
               <Button
                 size="lg"
-                className="h-11 rounded-xl bg-white px-8 text-sm font-semibold text-black shadow-none hover:bg-zinc-100 transition-colors"
+                className="h-11 rounded-xl bg-primary px-8 text-sm font-semibold text-primary-foreground shadow-[0_0_20px_rgba(16,185,129,0.2)] hover:bg-emerald-500 hover:shadow-[0_0_25px_rgba(16,185,129,0.4)] transition-all duration-200"
               >
                 Try Live Demo
               </Button>
@@ -175,12 +181,12 @@ export default function LandingPage() {
         <section
           id="features"
           aria-labelledby="features-heading"
-          className="mx-auto max-w-6xl px-6 py-24"
+          className="mx-auto max-w-6xl px-6 py-32"
         >
-          <div className="mb-14 text-center">
+          <div className="mb-16 text-center">
             <h2
               id="features-heading"
-              className="text-2xl font-semibold tracking-tight text-white sm:text-3xl"
+              className="text-3xl font-bold tracking-tight text-white sm:text-4xl"
             >
               Everything your agents need to stay safe
             </h2>
@@ -200,7 +206,7 @@ export default function LandingPage() {
                   index === 1 && "rounded-tr-2xl",
                   index === features.length - 2 && "rounded-bl-2xl sm:rounded-bl-2xl",
                   index === features.length - 1 && "rounded-br-2xl",
-                  "bg-[#0A0A0A] transition-colors hover:bg-white/[0.02]",
+                  "bg-background transition-all duration-200 hover:bg-white/[0.02] hover:border-primary/20",
                 ]
                   .filter(Boolean)
                   .join(" ")}
@@ -225,22 +231,22 @@ export default function LandingPage() {
         <section
           id="cta-banner"
           aria-labelledby="cta-heading"
-          className="border-t border-white/[0.06] px-6 py-24"
+          className="border-t border-white/[0.06] px-6 py-32 bg-[radial-gradient(ellipse_at_bottom,_var(--tw-gradient-stops))] from-emerald-900/10 via-background to-background"
         >
           <div className="mx-auto max-w-2xl text-center">
             <h2
               id="cta-heading"
-              className="text-2xl font-semibold tracking-tight text-white sm:text-3xl"
+              className="text-3xl font-bold tracking-tight text-white sm:text-4xl"
             >
               Ready to secure your agents?
             </h2>
-            <p className="mt-3 text-sm text-zinc-500">
-              Run the live demo and see AgentShield intercept real threats in
+            <p className="mt-4 text-base leading-relaxed text-zinc-400">
+              Run the live demo and see Aegis intercept real threats in
               your MCP environment.
             </p>
-            <div className="mt-8">
+            <div className="mt-10">
               <Link href="/demo" id="cta-banner-button">
-                <Button className="h-11 rounded-xl bg-white px-8 text-sm font-semibold text-black hover:bg-zinc-100 transition-colors">
+                <Button className="h-11 rounded-xl bg-primary px-8 text-sm font-semibold text-primary-foreground shadow-[0_0_20px_rgba(16,185,129,0.2)] hover:bg-emerald-500 hover:shadow-[0_0_25px_rgba(16,185,129,0.4)] transition-all duration-200">
                   Try Live Demo
                 </Button>
               </Link>

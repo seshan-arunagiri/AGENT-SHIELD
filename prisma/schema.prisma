@@ -1,0 +1,66 @@
+// This is your Prisma schema file.
+// Learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  // LOCAL DEV: sqlite. Switch to postgresql + Neon URL before deploying to production. See DEPLOYMENT.md.
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// Persists a full record of every AgentShield scan for audit and analytics.
+/// Written by lib/logger/logger.ts after each call to runFullScan().
+model ScanLog {
+  /// Auto-incrementing primary key.
+  id Int @id @default(autoincrement())
+
+  /// UTC timestamp of when the scan completed (set by database default).
+  timestamp DateTime @default(now())
+
+  /// Which MCP tool produced the scanned content — e.g. "github", "database", "filesystem".
+  toolName String
+
+  /// The scenario identifier — e.g. "clean", "injection", "credential-theft",
+  /// "destructive", or "live" when content comes from a real tool call.
+  scenario String
+
+  /// Numeric risk score 0–100 from the risk engine.
+  riskScore Int
+
+  /// Categorical risk level: "Safe" | "Low" | "Medium" | "Critical".
+  riskLevel String
+
+  /// JSON.stringify'd array of ThreatPattern objects — preserves full detail
+  /// without needing a normalised join table at this stage.
+  detectedPatterns String
+
+  /// The original, unmodified tool response — stored for audit replay.
+  originalContent String
+
+  /// The sanitized response with malicious spans redacted.
+  sanitizedContent String
+
+  /// Middleware decision: "Blocked" (Medium/Critical) or "Allowed" (Safe/Low).
+  status String
+}
+
+/// Singleton model holding AgentShield global configurations.
+/// Always queried by id = 1.
+model AppSettings {
+  id Int @id @default(1)
+
+  /// If true, shifts the risk threshold for Medium/Critical down by 10 points.
+  strictMode Boolean @default(false)
+
+  /// If true, logs all scans but never blocks (forces "Allowed" status).
+  learningMode Boolean @default(false)
+
+  /// If true, reveals raw pattern match details in demo and logs UI.
+  developerMode Boolean @default(false)
+
+  /// UI preference, static toggle for demo purposes.
+  darkMode Boolean @default(true)
+}

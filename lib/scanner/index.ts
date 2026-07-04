@@ -13,19 +13,16 @@
  *   calculateRisk()      ← lib/riskEngine/riskEngine.ts
  *     │  returns { riskScore, riskLevel }
  *     ▼
- *   [sanitizer]          ← lib/sanitizer/ (Phase 2 — not yet implemented)
- *     │  returns sanitizedContent
+ *   sanitizeContent()    ← lib/sanitizer/sanitizer.ts
+ *     │  returns sanitizedContent (malicious spans redacted)
  *     ▼
  *   ScanResult           ← types/types.ts
- *
- * Phase 1 note: `sanitizedContent` is set equal to `originalContent`
- * because the sanitizer module is built in the next implementation step.
- * The field exists in the contract now so downstream consumers can rely on it.
  */
 
 import type { ScanResult } from "@/types/types";
 import { scanContent } from "./scanner";
 import { calculateRisk } from "@/lib/riskEngine/riskEngine";
+import { sanitizeContent } from "@/lib/sanitizer/sanitizer";
 
 /**
  * Run the full AgentShield threat detection pipeline on a string of content.
@@ -36,21 +33,25 @@ import { calculateRisk } from "@/lib/riskEngine/riskEngine";
  *   - The demo page that lets users paste arbitrary tool output.
  *
  * @param content - Raw string to scan (tool response body, tool description, etc.)
- * @returns        A complete ScanResult containing score, level, matched patterns,
- *                 original content, and (Phase 1) a passthrough sanitizedContent.
+ * @returns        A complete ScanResult with score, level, matched patterns,
+ *                 the original content preserved for audit, and a sanitizedContent
+ *                 where all malicious substrings have been redacted.
  *
  * @pure  No side effects. Safe to call in parallel (no shared mutable state).
  */
-export function runFullScan(content: string): ScanResult {
+export function runFullScan(
+  content: string, 
+  options?: { strictMode?: boolean }
+): ScanResult {
   // 1. Detect: find all threat patterns in the content.
   const detectedPatterns = scanContent(content);
 
   // 2. Score: convert matched patterns → numeric risk score + level.
-  const { riskScore, riskLevel } = calculateRisk(detectedPatterns);
+  const { riskScore, riskLevel } = calculateRisk(detectedPatterns, options);
 
-  // 3. Sanitise: Phase 1 — pass through unchanged.
-  //    Phase 2 will replace this with actual redaction/neutralisation logic.
-  const sanitizedContent = content;
+  // 3. Sanitise: replace every malicious substring with a redaction token.
+  //    Safe content passes through unchanged (fast path in sanitizeContent).
+  const sanitizedContent = sanitizeContent(content, detectedPatterns);
 
   // 4. Assemble and return the full ScanResult.
   return {
@@ -67,3 +68,4 @@ export function runFullScan(content: string): ScanResult {
 // without reaching into sub-modules directly.
 export { scanContent } from "./scanner";
 export { calculateRisk } from "@/lib/riskEngine/riskEngine";
+export { sanitizeContent } from "@/lib/sanitizer/sanitizer";

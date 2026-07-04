@@ -1,3 +1,5 @@
-// Sanitizer module — placeholder for prompt sanitization and output filtering
-// Implementation will be added in a subsequent step.
-export {};
+/**
+ * Sanitizer module — public re-export.
+ * All implementation lives in sanitizer.ts.
+ */
+export { sanitizeContent } from "./sanitizer";

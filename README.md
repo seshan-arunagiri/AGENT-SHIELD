@@ -54,7 +54,54 @@ The workflow runs in seconds and requires no manual steps after initial setup.
 
 ## Deployment Options
 
-Aegis is a full-stack Next.js application that can be deployed entirely on a single platform:
+Aegis is a full-stack Next.js application that can be deployed in multiple ways:
+
+### Docker Deployment (Local/Self-Hosted)
+
+Run Aegis with Docker and PostgreSQL in containers:
+
+1. **Prerequisites**:
+   - [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/) installed
+   - Clone the repository
+
+2. **Setup environment variables**:
+   ```bash
+   cp .env.example .env
+   # Edit .env and add your API keys (optional but recommended):
+   # GITHUB_TOKEN, GROQ_API_KEY, AEGIS_CI_TOKEN
+   ```
+
+3. **Build and start containers**:
+   ```bash
+   docker-compose up --build
+   ```
+   
+   This will:
+   - Build the Next.js app in a multi-stage Docker build
+   - Start PostgreSQL 16 in a container
+   - Start the Aegis app on port 3000
+
+4. **Run database migrations** (first time only):
+   ```bash
+   docker-compose exec app npx prisma migrate deploy
+   ```
+
+5. **Access the application**:
+   - Open http://localhost:3000 in your browser
+   - The app is now running with a containerized PostgreSQL database
+
+**Stopping the containers**:
+```bash
+docker-compose down
+```
+
+**Stopping and removing data**:
+```bash
+docker-compose down -v
+```
+
+### Cloud Deployment
+
 - **Vercel**: Can host the entire application seamlessly. The UI is deployed globally on the edge, while the `/api` routes are automatically deployed as serverless functions.
 - **Render**: Can host the entire application as a single Node.js Web Service (configured via the included `render.yaml`).
 

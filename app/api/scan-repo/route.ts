@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runFullScan } from "@/lib/scanner";
 import { logScan } from "@/lib/logger/logger";
+import { verifyWithAI } from "@/lib/aiVerification";
 import { prisma } from "@/lib/db/prisma";
+import type { RiskLevel } from "@/types/types";
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
@@ -22,15 +24,43 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: "Valid repoUrl string is required." }, { status: 400 });
     }
 
-    // Extract owner/repo from URL
-    // Examples: "github.com/owner/repo", "https://github.com/owner/repo", "owner/repo"
-    const match = repoUrl.match(/(?:github\.com\/|^)?([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+)\/?/);
-    if (!match) {
-      return NextResponse.json({ error: "Invalid GitHub repository URL format. Example: github.com/owner/repo" }, { status: 400 });
+    // Normalise the URL:
+    // 1. Trim whitespace.
+    // 2. Strip trailing slash.
+    // 3. Prepend https:// if no protocol is present (so URL() can parse it).
+    // 4. Validate it is a github.com URL with at least owner + repo path segments.
+    // 5. Strip a trailing ".git" from the repo segment.
+    let normalized = repoUrl.trim().replace(/\/+$/, "");
+    if (!/^https?:\/\//i.test(normalized)) {
+      normalized = "https://" + normalized;
     }
 
-    const owner = match[1];
-    const repo = match[2];
+    let owner: string;
+    let repo: string;
+    try {
+      const url = new URL(normalized);
+      if (url.hostname !== "github.com") {
+        return NextResponse.json(
+          { error: "Only GitHub repository URLs are supported (e.g. github.com/owner/repo)." },
+          { status: 400 }
+        );
+      }
+      const segments = url.pathname.replace(/^\//, "").split("/").filter(Boolean);
+      if (segments.length < 2) {
+        return NextResponse.json(
+          { error: "Invalid GitHub URL format — could not extract owner and repo. Example: github.com/owner/repo" },
+          { status: 400 }
+        );
+      }
+      owner = segments[0];
+      // Strip .git suffix if present
+      repo = segments[1].replace(/\.git$/i, "");
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid GitHub URL format. Example: github.com/owner/repo or https://github.com/owner/repo.git" },
+        { status: 400 }
+      );
+    }
 
     // Fetch README from GitHub API
     const headers: Record<string, string> = {
@@ -42,68 +72,178 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       headers["Authorization"] = `Bearer ${process.env.GITHUB_TOKEN}`;
     }
 
-    // Fetch README from GitHub API
-    const githubRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/readme`, {
+    // Fetch default branch via GitHub API
+    const repoRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
       headers
     });
 
-    if (!githubRes.ok) {
-      if (githubRes.status === 404) {
-        return NextResponse.json({ error: "Repository or README not found. Ensure it is public." }, { status: 404 });
-      } else if (githubRes.status === 403) {
-        return NextResponse.json({ error: "GitHub API rate limit exceeded. Please try again later." }, { status: 403 });
+    if (!repoRes.ok) {
+      if (repoRes.status === 404) {
+        return NextResponse.json(
+          { error: `Repository "${owner}/${repo}" not found. Ensure the repo is public and the URL is correct.` },
+          { status: 404 }
+        );
+      } else if (repoRes.status === 403) {
+        const rateLimitMsg = process.env.GITHUB_TOKEN 
+          ? "GitHub API rate limit reached. Wait a few minutes or use a different token."
+          : "GitHub API rate limit reached. Add a GITHUB_TOKEN to increase the limit, or wait a few minutes.";
+        return NextResponse.json({ error: rateLimitMsg }, { status: 403 });
       }
-      return NextResponse.json({ error: `GitHub API error: ${githubRes.statusText}` }, { status: githubRes.status });
+      return NextResponse.json({ error: `GitHub API error: ${repoRes.statusText}` }, { status: repoRes.status });
     }
 
-    const githubData = await githubRes.json();
-    
-    if (githubData.encoding !== "base64" || typeof githubData.content !== "string") {
-      return NextResponse.json({ error: "Unexpected encoding from GitHub API." }, { status: 500 });
+    const repoData = await repoRes.json();
+    const defaultBranch = repoData.default_branch || "main";
+
+    // Fetch Git Trees API recursively
+    const treeRes = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/git/trees/${defaultBranch}?recursive=1`,
+      { headers }
+    );
+
+    if (!treeRes.ok) {
+      if (treeRes.status === 403) {
+        const rateLimitMsg = process.env.GITHUB_TOKEN 
+          ? "GitHub API rate limit reached. Wait a few minutes or use a different token."
+          : "GitHub API rate limit reached. Add a GITHUB_TOKEN to increase the limit, or wait a few minutes.";
+        return NextResponse.json({ error: rateLimitMsg }, { status: 403 });
+      }
+      return NextResponse.json(
+        { error: `Failed to fetch repository tree: ${treeRes.statusText}` },
+        { status: treeRes.status }
+      );
     }
 
-    // Decode base64 content
-    let content = "";
-    try {
-      // GitHub base64 contains newlines, clean them first
-      const b64 = githubData.content.replace(/\n/g, "");
-      content = Buffer.from(b64, "base64").toString("utf8");
-    } catch {
-      return NextResponse.json({ error: "Failed to decode repository README content." }, { status: 500 });
+    const treeData = await treeRes.json();
+    const allFiles = (treeData.tree || []) as Array<{ path: string; type: string; size?: number }>;
+
+    // Filter to text-based files
+    const TEXT_EXTENSIONS = [
+      ".md", ".txt", ".js", ".ts", ".jsx", ".tsx", ".json", ".yml", ".yaml",
+      ".py", ".go", ".rs", ".java", ".c", ".cpp", ".h", ".hpp", ".cs",
+      ".rb", ".php", ".sh", ".bash", ".env", ".toml", ".ini", ".cfg"
+    ];
+
+    const textFiles = allFiles
+      .filter((f) => f.type === "blob" && TEXT_EXTENSIONS.some((ext) => f.path.toLowerCase().endsWith(ext)))
+      .slice(0, 30);
+
+    if (textFiles.length === 0) {
+      return NextResponse.json(
+        { error: "No scannable text files found in repository." },
+        { status: 400 }
+      );
     }
 
-    // 0. Fetch Global Settings
+    // Fetch Global Settings
     const settings = await prisma.appSettings.findUnique({ where: { id: 1 } });
     const strictMode = settings?.strictMode ?? false;
     const learningMode = settings?.learningMode ?? false;
+    const aiVerificationEnabled = settings?.aiVerificationEnabled ?? false;
 
-    // 2. Run the full pipeline
-    const result = runFullScan(content, { strictMode });
+    // Scan each file individually
+    const fileResults = [];
+    let highestRiskScore = 0;
+    let highestRiskLevel: RiskLevel = "Safe";
 
-    // 3. Determine middleware decision
-    let status: "Blocked" | "Allowed" = (result.riskLevel === "Medium" || result.riskLevel === "Critical") ? "Blocked" : "Allowed";
+    for (const file of textFiles) {
+      try {
+        const fileRes = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/contents/${file.path}?ref=${defaultBranch}`,
+          { headers }
+        );
+
+        if (fileRes.ok) {
+          const fileData = await fileRes.json();
+          if (fileData.encoding === "base64" && typeof fileData.content === "string") {
+            const b64 = fileData.content.replace(/\n/g, "");
+            const decoded = Buffer.from(b64, "base64").toString("utf8");
+            
+            // Scan this file
+            const scanResult = runFullScan(decoded, { strictMode });
+            
+            // AI Verification (if enabled and risk level is Medium or Critical)
+            if (aiVerificationEnabled && (scanResult.riskLevel === "Medium" || scanResult.riskLevel === "Critical")) {
+              const aiResult = await verifyWithAI(decoded, scanResult.detectedPatterns);
+              if (aiResult) {
+                scanResult.aiVerification = aiResult;
+              }
+            }
+            
+            fileResults.push({
+              filePath: file.path,
+              riskScore: scanResult.riskScore,
+              riskLevel: scanResult.riskLevel,
+              detectedPatterns: scanResult.detectedPatterns,
+              originalContent: scanResult.originalContent,
+              sanitizedContent: scanResult.sanitizedContent,
+              aiVerification: scanResult.aiVerification
+            });
+
+            // Track highest risk
+            if (scanResult.riskScore > highestRiskScore) {
+              highestRiskScore = scanResult.riskScore;
+              highestRiskLevel = scanResult.riskLevel;
+            }
+          }
+        } else if (fileRes.status === 403) {
+          // Rate limit hit during file fetching
+          const rateLimitMsg = process.env.GITHUB_TOKEN 
+            ? "GitHub API rate limit reached while fetching files. Wait a few minutes or use a different token."
+            : "GitHub API rate limit reached while fetching files. Add a GITHUB_TOKEN to increase the limit, or wait a few minutes.";
+          return NextResponse.json({ error: rateLimitMsg }, { status: 403 });
+        }
+      } catch {
+        // Skip files that fail to fetch
+        continue;
+      }
+    }
+
+    if (fileResults.length === 0) {
+      return NextResponse.json(
+        { error: "Failed to read any file content from repository." },
+        { status: 500 }
+      );
+    }
+
+    // Determine middleware decision based on highest risk
+    let status: "Blocked" | "Allowed" = (highestRiskLevel === "Medium" || highestRiskLevel === "Critical") ? "Blocked" : "Allowed";
     if (learningMode) {
       status = "Allowed";
     }
 
-    // 4. Persist to SQLite
+    // Persist to SQLite (log the overall scan)
     try {
       await logScan({
         toolName: "github",
         scenario: "live-repo",
-        riskScore: result.riskScore,
-        riskLevel: result.riskLevel,
-        detectedPatterns: result.detectedPatterns,
-        originalContent: result.originalContent,
-        sanitizedContent: result.sanitizedContent,
+        riskScore: highestRiskScore,
+        riskLevel: highestRiskLevel,
+        detectedPatterns: fileResults.flatMap(f => f.detectedPatterns),
+        originalContent: `Scanned ${fileResults.length} files`,
+        sanitizedContent: `Scanned ${fileResults.length} files`,
         status,
       });
     } catch (logErr) {
       console.error("[Aegis /api/scan-repo] logScan failed:", logErr);
     }
 
-    // 5. Return result
-    return NextResponse.json(result, { status: 200 });
+    // Return per-file results
+    return NextResponse.json({
+      files: fileResults.map(f => ({
+        filePath: f.filePath,
+        riskScore: f.riskScore,
+        riskLevel: f.riskLevel,
+        detectedPatternsCount: f.detectedPatterns.length,
+        detectedPatterns: f.detectedPatterns,
+        originalContent: f.originalContent,
+        sanitizedContent: f.sanitizedContent
+      })),
+      overallRiskScore: highestRiskScore,
+      overallRiskLevel: highestRiskLevel,
+      filesScanned: fileResults.length,
+      status
+    }, { status: 200 });
   } catch (err) {
     console.error("[Aegis /api/scan-repo] Unexpected error:", err);
     return NextResponse.json({ error: "Internal server error. Please try again." }, { status: 500 });

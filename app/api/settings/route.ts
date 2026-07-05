@@ -21,6 +21,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           learningMode: false,
           developerMode: false,
           darkMode: true,
+          aiVerificationEnabled: false,
         },
       });
     }
@@ -45,12 +46,13 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
     const body = await request.json();
     
     // Only extract the valid fields
-    const { strictMode, learningMode, developerMode, darkMode } = body;
+    const { strictMode, learningMode, developerMode, darkMode, aiVerificationEnabled } = body;
     const dataToUpdate: any = {};
     if (strictMode !== undefined) dataToUpdate.strictMode = strictMode;
     if (learningMode !== undefined) dataToUpdate.learningMode = learningMode;
     if (developerMode !== undefined) dataToUpdate.developerMode = developerMode;
     if (darkMode !== undefined) dataToUpdate.darkMode = darkMode;
+    if (aiVerificationEnabled !== undefined) dataToUpdate.aiVerificationEnabled = aiVerificationEnabled;
 
     const updatedSettings = await prisma.appSettings.upsert({
       where: { id: 1 },
@@ -61,6 +63,7 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
         learningMode: learningMode ?? false,
         developerMode: developerMode ?? false,
         darkMode: darkMode ?? true,
+        aiVerificationEnabled: aiVerificationEnabled ?? false,
       },
     });
 

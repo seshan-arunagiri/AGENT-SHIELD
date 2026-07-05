@@ -12,6 +12,10 @@ export type {
   ThreatPattern,
   ScanResult,
   PatternDefinition,
+  FileScanResult,
+  RepoScanResult,
+  BatchScanRequest,
+  BatchScanResult,
 } from "./types";
 
 // ─── Legacy scaffold types (kept for backwards compatibility) ────────────────

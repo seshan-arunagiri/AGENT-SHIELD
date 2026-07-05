@@ -30,6 +30,8 @@ export type CreateScanLogInput = {
   sanitizedContent: string;
   /** "Blocked" if riskLevel is Medium or Critical, "Allowed" otherwise. */
   status: "Blocked" | "Allowed";
+  /** Optional AI verification verdict (JSON stringified). */
+  aiVerdict?: string;
 };
 
 /** Aggregate stats for the dashboard. */
@@ -61,6 +63,7 @@ export async function logScan(entry: CreateScanLogInput): Promise<ScanLog> {
       originalContent: entry.originalContent,
       sanitizedContent: entry.sanitizedContent,
       status: entry.status,
+      aiVerdict: entry.aiVerdict,
     },
   });
 }

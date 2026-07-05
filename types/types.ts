@@ -81,6 +81,65 @@ export interface ScanResult {
   originalContent: string;
   /** ISO-8601 UTC timestamp of when the scan completed. */
   timestamp: string;
+  /** Optional AI verification result for Medium-risk scans (if enabled). */
+  aiVerification?: {
+    verdict: "likely-threat" | "likely-false-positive" | "uncertain";
+    reasoning: string;
+  };
+}
+
+// ─── Repository Scan Result ──────────────────────────────────────────────────
+
+/**
+ * Per-file scan result from a repository scan.
+ */
+export interface FileScanResult {
+  filePath: string;
+  riskScore: number;
+  riskLevel: RiskLevel;
+  detectedPatternsCount: number;
+  detectedPatterns: ThreatPattern[];
+  originalContent: string;
+  sanitizedContent: string;
+}
+
+/**
+ * The full output of a repository scan — includes per-file results.
+ */
+export interface RepoScanResult {
+  files: FileScanResult[];
+  overallRiskScore: number;
+  overallRiskLevel: RiskLevel;
+  filesScanned: number;
+  status: "Blocked" | "Allowed";
+}
+
+// ─── Batch Scan Types ────────────────────────────────────────────────────────
+
+/**
+ * Input format for batch scan requests from CI/CD pipelines.
+ */
+export interface BatchScanRequest {
+  files: Array<{
+    path: string;
+    content: string;
+  }>;
+}
+
+/**
+ * Output format for batch scan responses.
+ */
+export interface BatchScanResult {
+  overallRiskScore: number;
+  overallRiskLevel: RiskLevel;
+  overallStatus: "Blocked" | "Allowed";
+  filesScanned: number;
+  files: Array<{
+    path: string;
+    riskScore: number;
+    riskLevel: RiskLevel;
+    detectedPatternsCount: number;
+  }>;
 }
 
 // ─── Internal Pattern Definition ─────────────────────────────────────────────

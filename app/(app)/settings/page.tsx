@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { Activity, ShieldAlert, Code, Moon, Settings as SettingsIcon } from "lucide-react";
+import { Activity, ShieldAlert, Code, Moon, Settings as SettingsIcon, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import type { AppSettings } from "@prisma/client";
 
@@ -133,6 +133,28 @@ export default function SettingsPage() {
             <Switch 
               checked={settings?.developerMode || false} 
               onCheckedChange={(checked) => handleToggle("developerMode", checked)} 
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-purple-500" />
+              AI-Assisted Verification (Groq)
+            </CardTitle>
+            <CardDescription>
+              Uses Groq's Llama 3.3 70B to double-check Medium and Critical risk results and reduce false positives. Requires GROQ_API_KEY on the server.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="text-sm font-medium">Enable AI Verification</span>
+              <p className="text-xs text-muted-foreground">Runs for Medium and Critical risk detections.</p>
+            </div>
+            <Switch 
+              checked={settings?.aiVerificationEnabled || false} 
+              onCheckedChange={(checked) => handleToggle("aiVerificationEnabled", checked)} 
             />
           </CardContent>
         </Card>

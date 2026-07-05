@@ -11,9 +11,9 @@ interface ResponsePanelProps {
 
 export function ResponsePanel({ content, isLoading, tool }: ResponsePanelProps) {
   return (
-    <div className="flex h-full flex-col rounded-xl border border-white/[0.07] bg-white/[0.02]">
+    <div className="flex h-full flex-col rounded-xl border border-white/[0.07] bg-white/[0.02] overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
+      <div className="flex shrink-0 items-center justify-between border-b border-white/[0.06] px-4 py-3">
         <div className="flex items-center gap-2">
           {/* Traffic light dots */}
           <span className="h-2.5 w-2.5 rounded-full bg-red-500/60" aria-hidden="true" />
@@ -28,7 +28,7 @@ export function ResponsePanel({ content, isLoading, tool }: ResponsePanelProps) 
         </span>
       </div>
 
-      {/* Body */}
+      {/* Body — scrollable, fills remaining height */}
       <div className="relative flex-1 overflow-hidden">
         {isLoading ? (
           // Loading skeleton

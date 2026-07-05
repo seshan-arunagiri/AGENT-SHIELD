@@ -9,7 +9,8 @@ import { ScenarioSelector } from "@/components/demo/scenario-selector";
 import { ResponsePanel } from "@/components/demo/response-panel";
 import { ResultPanel } from "@/components/demo/result-panel";
 import type { DemoTool, DemoScenario } from "@/components/demo/demo-types";
-import type { ScanResult } from "@/types/types";
+import type { ScanResult, RepoScanResult } from "@/types/types";
+import { RepoResultPanel } from "@/components/demo/repo-result-panel";
 
 // ─── Mock content preview — fetched locally before the scan ──────────────────
 // We also call /api/scan, but we want to show the raw content in the left
@@ -21,12 +22,14 @@ import type { ScanResult } from "@/types/types";
 interface ScanState {
   status: "idle" | "loading" | "done" | "error";
   result: ScanResult | null;
+  repoResult: RepoScanResult | null;
   errorMessage: string | null;
 }
 
 const INITIAL_STATE: ScanState = {
   status: "idle",
   result: null,
+  repoResult: null,
   errorMessage: null,
 };
 
@@ -53,7 +56,7 @@ export default function DemoPage() {
   }, []);
 
   const handleRunScan = useCallback(async () => {
-    setScanState({ status: "loading", result: null, errorMessage: null });
+    setScanState({ status: "loading", result: null, repoResult: null, errorMessage: null });
 
     try {
       let response: Response;
@@ -92,12 +95,18 @@ export default function DemoPage() {
         throw new Error(data.error ?? `Server responded with ${response.status}`);
       }
 
-      const result = (await response.json()) as ScanResult;
-      setScanState({ status: "done", result, errorMessage: null });
+      const data = await response.json();
+      
+      // Check if this is a repo scan result (has 'files' array)
+      if (inputMode === "github" && "files" in data) {
+        setScanState({ status: "done", result: null, repoResult: data as RepoScanResult, errorMessage: null });
+      } else {
+        setScanState({ status: "done", result: data as ScanResult, repoResult: null, errorMessage: null });
+      }
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Unknown error occurred.";
-      setScanState({ status: "error", result: null, errorMessage: message });
+      setScanState({ status: "error", result: null, repoResult: null, errorMessage: message });
     }
   }, [tool, scenario, inputMode, fileContent, repoUrl, pasteContent]);
 
@@ -231,7 +240,7 @@ export default function DemoPage() {
                     placeholder="github.com/owner/repo"
                     className="w-full bg-background border border-white/[0.06] rounded-md px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-white/20"
                   />
-                  <p className="text-[10px] text-zinc-500">Public repos only, no auth. Subject to GitHub rate limits.</p>
+                  <p className="text-[10px] text-zinc-500">Scans up to 30 text-based files for hidden instructions or malicious content. Public repos only — subject to GitHub rate limits.</p>
                 </div>
               </div>
             )}
@@ -291,13 +300,17 @@ export default function DemoPage() {
                 )}
               </button>
 
-              {scanState.status === "done" && scanState.result && (
+              {scanState.status === "done" && (scanState.result || scanState.repoResult) && (
                 <motion.p
                   initial={{ opacity: 0, x: -6 }}
                   animate={{ opacity: 1, x: 0 }}
                   className="text-xs text-zinc-600"
                 >
-                  Scan completed in &lt;1ms &mdash; {scanState.result.detectedPatterns.length} pattern{scanState.result.detectedPatterns.length !== 1 ? "s" : ""} detected
+                  {scanState.repoResult ? (
+                    <>Scan completed &mdash; {scanState.repoResult.filesScanned} file{scanState.repoResult.filesScanned !== 1 ? "s" : ""} scanned</>
+                  ) : (
+                    <>Scan completed in &lt;1ms &mdash; {scanState.result?.detectedPatterns.length} pattern{scanState.result?.detectedPatterns.length !== 1 ? "s" : ""} detected</>
+                  )}
                 </motion.p>
               )}
 
@@ -322,34 +335,50 @@ export default function DemoPage() {
           transition={{ duration: 0.4, delay: 0.2 }}
           className="mx-auto max-w-6xl px-6 py-6"
         >
-          <div className="grid h-[560px] grid-cols-1 gap-4 lg:grid-cols-2">
-            {/* Left — Raw tool response */}
-            <section aria-labelledby="response-panel-heading">
-              <h2 id="response-panel-heading" className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-zinc-600">
-                Incoming Tool Response
+          {inputMode === "github" && scanState.repoResult ? (
+            // Full-width repo result for GitHub scans
+            <section aria-labelledby="repo-result-heading" className="flex flex-col">
+              <h2 id="repo-result-heading" className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-zinc-600">
+                Repository Scan Results
               </h2>
-              <div className="h-full">
-                <ResponsePanel
-                  content={rawContent}
+              <div className="min-h-[520px] max-h-[600px] overflow-hidden">
+                <RepoResultPanel
+                  result={scanState.repoResult}
                   isLoading={isLoading}
-                  tool={tool}
                 />
               </div>
             </section>
+          ) : (
+            // Two-column layout for other scans
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {/* Left — Raw tool response */}
+              <section aria-labelledby="response-panel-heading" className="flex flex-col">
+                <h2 id="response-panel-heading" className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-zinc-600">
+                  Incoming Tool Response
+                </h2>
+                <div className="min-h-[420px] max-h-[560px] lg:h-[520px] overflow-hidden">
+                  <ResponsePanel
+                    content={rawContent}
+                    isLoading={isLoading}
+                    tool={tool}
+                  />
+                </div>
+              </section>
 
-            {/* Right — Scan result */}
-            <section aria-labelledby="result-panel-heading">
-              <h2 id="result-panel-heading" className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-zinc-600">
-                Aegis Analysis
-              </h2>
-              <div className="h-full">
-                <ResultPanel
-                  result={scanState.result}
-                  isLoading={isLoading}
-                />
-              </div>
-            </section>
-          </div>
+              {/* Right — Scan result */}
+              <section aria-labelledby="result-panel-heading" className="flex flex-col">
+                <h2 id="result-panel-heading" className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-zinc-600">
+                  Aegis Analysis
+                </h2>
+                <div className="min-h-[420px] max-h-[560px] lg:h-[520px] overflow-hidden">
+                  <ResultPanel
+                    result={scanState.result}
+                    isLoading={isLoading}
+                  />
+                </div>
+              </section>
+            </div>
+          )}
         </motion.div>
 
         {/* ── How it works strip ───────────────────────────────────────── */}

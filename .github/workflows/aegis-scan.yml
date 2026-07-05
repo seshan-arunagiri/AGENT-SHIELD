@@ -1,0 +1,221 @@
+name: Aegis Security Scan
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      pull-requests: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch full history for accurate diffs
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v41
+        with:
+          files: |
+            **/*.md
+            **/*.txt
+            **/*.js
+            **/*.ts
+            **/*.jsx
+            **/*.tsx
+            **/*.json
+            **/*.yml
+            **/*.yaml
+            **/*.py
+            **/*.go
+            **/*.rs
+            **/*.java
+            **/*.c
+            **/*.cpp
+            **/*.h
+            **/*.hpp
+            **/*.cs
+            **/*.rb
+            **/*.php
+            **/*.sh
+            **/*.bash
+            **/*.env
+            **/*.toml
+            **/*.ini
+            **/*.cfg
+
+      - name: Prepare files for scanning
+        id: prepare
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          # Read changed files and build JSON payload
+          files_json="["
+          first=true
+          
+          for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
+            if [ -f "$file" ]; then
+              # Escape content for JSON
+              content=$(jq -Rs . < "$file")
+              
+              if [ "$first" = true ]; then
+                first=false
+              else
+                files_json+=","
+              fi
+              
+              files_json+="{\"path\":\"$file\",\"content\":$content}"
+            fi
+          done
+          
+          files_json+="]"
+          
+          # Save to file to avoid issues with special characters in GitHub Actions
+          echo "$files_json" > /tmp/scan_payload.json
+          
+          echo "payload_ready=true" >> $GITHUB_OUTPUT
+          echo "file_count=$(echo $files_json | jq '. | length')" >> $GITHUB_OUTPUT
+
+      - name: Run Aegis scan
+        id: scan
+        if: steps.prepare.outputs.payload_ready == 'true'
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Content-Type: application/json" \
+            -H "x-aegis-token: ${{ secrets.AEGIS_CI_TOKEN }}" \
+            -d @/tmp/scan_payload.json \
+            "${{ secrets.AEGIS_API_URL }}/api/scan-batch")
+          
+          # Extract HTTP code and body
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          
+          echo "http_code=$http_code" >> $GITHUB_OUTPUT
+          echo "$body" > /tmp/scan_result.json
+          
+          if [ "$http_code" != "200" ]; then
+            echo "error=API request failed with status $http_code" >> $GITHUB_OUTPUT
+            exit 0  # Don't fail yet, let the next step handle it
+          fi
+          
+          # Extract key values
+          overall_status=$(echo "$body" | jq -r '.overallStatus')
+          overall_risk_score=$(echo "$body" | jq -r '.overallRiskScore')
+          overall_risk_level=$(echo "$body" | jq -r '.overallRiskLevel')
+          
+          echo "status=$overall_status" >> $GITHUB_OUTPUT
+          echo "risk_score=$overall_risk_score" >> $GITHUB_OUTPUT
+          echo "risk_level=$overall_risk_level" >> $GITHUB_OUTPUT
+
+      - name: Post PR comment
+        if: github.event_name == 'pull_request' && steps.prepare.outputs.payload_ready == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            
+            // Read scan result
+            let scanResult;
+            try {
+              scanResult = JSON.parse(fs.readFileSync('/tmp/scan_result.json', 'utf8'));
+            } catch (err) {
+              console.error('Failed to read scan result:', err);
+              return;
+            }
+            
+            // Build status emoji
+            const statusEmoji = scanResult.overallStatus === 'Blocked' ? '🚫' : '✅';
+            const riskEmoji = {
+              'Safe': '✅',
+              'Low': '🟡',
+              'Medium': '🟠',
+              'Critical': '🔴'
+            };
+            
+            // Build per-file table
+            let fileTable = '| File | Risk Level | Score |\n|------|-----------|-------|\n';
+            for (const file of scanResult.files || []) {
+              const emoji = riskEmoji[file.riskLevel] || '⚪';
+              fileTable += `| \`${file.path}\` | ${emoji} ${file.riskLevel} | ${file.riskScore}/100 |\n`;
+            }
+            
+            // Build comment body
+            const commentBody = `## ${statusEmoji} Aegis Security Scan Results
+            
+            **Overall Status:** ${scanResult.overallStatus}  
+            **Overall Risk Level:** ${riskEmoji[scanResult.overallRiskLevel] || '⚪'} ${scanResult.overallRiskLevel}  
+            **Overall Risk Score:** ${scanResult.overallRiskScore}/100  
+            **Files Scanned:** ${scanResult.filesScanned}
+            
+            ### Per-File Results
+            
+            ${fileTable}
+            
+            ${scanResult.overallStatus === 'Blocked' 
+              ? '⚠️ **This PR is blocked due to detected security threats.** Review the flagged files and remove any prompt injection patterns before merging.' 
+              : '✅ No high-risk threats detected. Safe to merge.'}
+            `;
+            
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const existingComment = comments.find(comment => 
+              comment.user.type === 'Bot' && comment.body.includes('Aegis Security Scan Results')
+            );
+            
+            // Create or update comment
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: commentBody
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody
+              });
+            }
+
+      - name: Check scan result
+        if: steps.prepare.outputs.payload_ready == 'true'
+        run: |
+          if [ "${{ steps.scan.outputs.http_code }}" != "200" ]; then
+            echo "❌ Aegis scan API request failed with status ${{ steps.scan.outputs.http_code }}"
+            exit 1
+          fi
+          
+          if [ "${{ steps.scan.outputs.status }}" = "Blocked" ]; then
+            echo "❌ Security scan failed: Overall status is Blocked"
+            echo "Risk Level: ${{ steps.scan.outputs.risk_level }}"
+            echo "Risk Score: ${{ steps.scan.outputs.risk_score }}/100"
+            exit 1
+          fi
+          
+          echo "✅ Security scan passed: No high-risk threats detected"
+          echo "Risk Level: ${{ steps.scan.outputs.risk_level }}"
+          echo "Risk Score: ${{ steps.scan.outputs.risk_score }}/100"
+
+      - name: No files to scan
+        if: steps.changed-files.outputs.any_changed != 'true'
+        run: |
+          echo "ℹ️  No text-based files changed in this push/PR. Skipping scan."

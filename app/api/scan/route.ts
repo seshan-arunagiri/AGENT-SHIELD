@@ -19,6 +19,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runFullScan } from "@/lib/scanner";
 import { logScan } from "@/lib/logger/logger";
+import { verifyWithAI } from "@/lib/aiVerification";
 import type { RiskLevel } from "@/types/types";
 import {
   getMockGithubResponse,
@@ -136,12 +137,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const settings = await prisma.appSettings.findUnique({ where: { id: 1 } });
     const strictMode = settings?.strictMode ?? false;
     const learningMode = settings?.learningMode ?? false;
+    const aiVerificationEnabled = settings?.aiVerificationEnabled ?? false;
 
     // 1. Fetch content (use provided content if exists, else mock).
     const content = typeof customContent === "string" ? customContent : getMockContent(tool, scenario);
 
     // 2. Run the full pipeline: detect → score → sanitise.
     const result = runFullScan(content, { strictMode });
+
+    // 2.5. AI Verification (if enabled and risk level is Medium or Critical)
+    if (aiVerificationEnabled && (result.riskLevel === "Medium" || result.riskLevel === "Critical")) {
+      const aiResult = await verifyWithAI(result.originalContent, result.detectedPatterns);
+      if (aiResult) {
+        result.aiVerification = aiResult;
+      }
+    }
 
     // 3. Determine middleware decision.
     let status = deriveStatus(result.riskLevel);
@@ -165,6 +175,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         originalContent: result.originalContent,
         sanitizedContent: result.sanitizedContent,
         status,
+        aiVerdict: result.aiVerification ? JSON.stringify(result.aiVerification) : undefined,
       });
     } catch (logErr) {
       // Log the error server-side but don't surface it to the client.

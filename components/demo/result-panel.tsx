@@ -127,24 +127,24 @@ export function ResultPanel({ result, isLoading }: ResultPanelProps) {
     : false;
 
   return (
-    <div className="flex h-full flex-col rounded-xl border border-white/[0.07] bg-white/[0.02]">
+    <div className="flex h-full flex-col rounded-xl border border-white/[0.07] bg-white/[0.02] overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
+      <div className="flex shrink-0 items-center justify-between border-b border-white/[0.06] px-4 py-3">
         <div className="flex items-center gap-2">
           <span className="flex h-5 w-5 items-center justify-center">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-500" aria-hidden="true">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
             </svg>
           </span>
-          <span className="text-xs font-medium text-zinc-500">AgentShield Analysis</span>
+          <span className="text-xs font-medium text-zinc-500">Aegis Analysis</span>
         </div>
         <span className="rounded border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 font-mono text-[10px] text-zinc-600">
           SCAN RESULT
         </span>
       </div>
 
-      {/* Body */}
-      <div className="flex-1 overflow-auto p-5">
+      {/* Body — scrollable, fills remaining height */}
+      <div className="flex-1 overflow-auto p-5 [scrollbar-color:rgba(255,255,255,0.1)_transparent] [scrollbar-width:thin]">
         {isLoading ? (
           // Loading state
           <div className="flex flex-col items-center gap-6 pt-8" aria-busy="true" aria-label="Scanning content">
@@ -282,6 +282,52 @@ export function ResultPanel({ result, isLoading }: ResultPanelProps) {
                   </motion.div>
                 )}
               </div>
+
+              {/* AI Verification (if present) */}
+              {result.aiVerification && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.3 }}
+                >
+                  <div className="mb-2.5 flex items-center gap-2">
+                    <h3 className="text-xs font-semibold uppercase tracking-widest text-zinc-600">
+                      AI Verification
+                    </h3>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="text-purple-500">
+                      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                    </svg>
+                  </div>
+                  <div className={cn(
+                    "rounded-lg border px-3 py-2.5",
+                    result.aiVerification.verdict === "likely-threat"
+                      ? "border-red-500/20 bg-red-500/[0.07]"
+                      : result.aiVerification.verdict === "likely-false-positive"
+                      ? "border-emerald-500/20 bg-emerald-500/[0.07]"
+                      : "border-zinc-500/20 bg-zinc-500/[0.07]"
+                  )}>
+                    <div className="flex items-start gap-2">
+                      <span className={cn(
+                        "shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold",
+                        result.aiVerification.verdict === "likely-threat"
+                          ? "border-red-500/30 bg-red-500/10 text-red-400"
+                          : result.aiVerification.verdict === "likely-false-positive"
+                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                          : "border-zinc-500/30 bg-zinc-500/10 text-zinc-400"
+                      )}>
+                        {result.aiVerification.verdict === "likely-threat"
+                          ? "Likely Threat"
+                          : result.aiVerification.verdict === "likely-false-positive"
+                          ? "Likely False Positive"
+                          : "Uncertain"}
+                      </span>
+                      <p className="text-xs text-zinc-400 leading-relaxed">
+                        {result.aiVerification.reasoning}
+                      </p>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
 
               {/* Timestamp */}
               <p className="text-[10px] text-zinc-700">
